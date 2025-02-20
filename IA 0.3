@@ -1,0 +1,91 @@
+import networkx as nx
+import spacy
+import numpy as np
+import uuid
+import torch
+from sentence_transformers import SentenceTransformer
+from collections import OrderedDict
+from transformers import pipeline
+
+# ... (nlp and embedding_model initialization)
+
+class AIResponseNetwork:
+    def __init__(self, similarity_threshold=0.6, reinforcement_factor=0.05, max_memory=500):
+        # ... (Existing initialization code)
+        self.memory = OrderedDict()  # For conversation history
+
+    def add_question(self, question, conversation_id=None):  # Add conversation_id
+        question_id = str(uuid.uuid4())
+        self.graph.add_node(question_id, text=question, type="question", conversation_id=conversation_id) # Associate question with conversation
+
+        # ... (Rest of add_question code)
+
+    def add_response(self, text, related_to=None, relevance=1.0, conversation_id=None): # Add conversation_id
+        response_id = str(uuid.uuid4())
+        self.graph.add_node(response_id, text=text, type="response", relevance=relevance, conversation_id=conversation_id) # Associate response with conversation
+
+        # ... (Rest of add_response code)
+
+    def reinforce_response(self, response_id, score, conversation_id=None): # Add conversation_id
+        if response_id in self.graph.nodes:
+            self.graph.nodes[response_id]['relevance'] = max(0.1, self.graph.nodes[response_id]['relevance'] + score * self.reinforcement_factor) # Use reinforcement factor
+
+            # Reinforce connections based on conversation context (example)
+            if conversation_id:
+                for source, target in self.graph.edges(response_id): # Edges pointing to this response
+                    if self.graph.nodes[source].get('conversation_id') == conversation_id: # Check if source is in the same conversation
+                        self.graph[source][response_id]['weight'] = max(0, self.graph[source][response_id]['weight'] + score * self.reinforcement_factor) # Reinforce the edge
+
+    # ... (semantic_similarity and evaluate_response remain the same)
+
+    def generate_final_response(self, conversation_id=None): # Add conversation_id
+        responses = [
+            n for n in self.graph.nodes
+            if self.graph.nodes[n].get('type') == "response" and (self.graph.nodes[n].get('conversation_id') == conversation_id or conversation_id is None) # Filter by conversation
+        ]
+        sorted_responses = sorted(responses, key=lambda n: self.graph.nodes[n]['relevance'], reverse=True)
+
+        # ... (Rest of generate_final_response code)
+
+    def train_self(self, rounds=100):
+        for _ in range(rounds):
+            conversation_id = str(uuid.uuid4())  # Create a new conversation ID for each training round
+            question = random.choice(list(self.graph.nodes)) if self.graph.nodes else "What is the meaning of AI?"
+            q_id = self.add_question(question, conversation_id)
+            response_text = self.generate_final_response(conversation_id)
+            r_id = self.add_response(response_text, related_to=[q_id], conversation_id=conversation_id)
+            score = self.evaluate_response(response_text)
+            self.reinforce_response(r_id, score, conversation_id)
+        print("Training complete.")
+
+    def add_to_memory(self, question, response, conversation_id):
+        if conversation_id not in self.memory:
+            self.memory[conversation_id] = []
+        self.memory[conversation_id].append({"question": question, "response": response})
+        if len(self.memory[conversation_id]) > self.max_memory:
+            self.memory[conversation_id].pop(0)  # Remove oldest entry
+
+    def get_memory(self, conversation_id):
+        return self.memory.get(conversation_id, [])
+
+# Ejemplo de uso con contexto conversacional
+if __name__ == "__main__":
+    ai_model = AIResponseNetwork()
+
+    conversation_id = str(uuid.uuid4()) # Start a conversation
+
+    q1 = ai_model.add_question("What is AI?", conversation_id)
+    r1 = ai_model.add_response("AI is the simulation of human intelligence processes by computer systems.", related_to=[q1], conversation_id=conversation_id)
+
+    q2 = ai_model.add_question("How is AI used?", conversation_id) # Follow-up question in the same conversation
+    r2 = ai_model.add_response("AI is used in various fields, like healthcare, finance, and transportation.", related_to=[q2, r1], conversation_id=conversation_id) # Connect to previous response in the conversation
+
+    print("Response 1:", ai_model.generate_final_response(conversation_id))
+    print("Response 2:", ai_model.generate_final_response(conversation_id))
+
+    ai_model.train_self(rounds=50)
+
+    print("Final Response:", ai_model.generate_final_response(conversation_id))
+
+    # Accessing memory
+    print("Conversation History:", ai_model.get_memory(conversation_id))
