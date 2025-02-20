@@ -1,0 +1,125 @@
+import networkx as nx
+import spacy
+import numpy as np
+from sentence_transformers import SentenceTransformer
+
+# Cargar modelos de NLP y embeddings avanzados
+nlp = spacy.load("en_core_web_md")  # Modelo de Spacy para análisis de lenguaje
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")  # Modelo para generar embeddings
+
+class AIResponseNetwork:
+    def __init__(self):  # Corregido __init__
+        self.graph = nx.DiGraph()  # Grafo dirigido para gestionar relaciones entre nodos
+        self.current_question_id = 0  # Contador para asignar ID únicos a las preguntas
+
+    def add_question(self, question):
+        """
+        Agrega una nueva pregunta a la red y conecta esta con respuestas previas semánticamente relacionadas.
+        """
+        self.current_question_id += 1
+        question_id = f"Q{self.current_question_id}"
+        q_embedding = self.get_embedding(question)
+        self.graph.add_node(question_id, text=question, type="question", embedding=q_embedding)
+
+        # Conectar la nueva pregunta con respuestas previas que sean semánticamente similares
+        for node in self.graph.nodes:
+            if self.graph.nodes[node].get('type') == "response":
+                similarity = self.semantic_similarity(question, self.graph.nodes[node]['text'])
+                if similarity > 0.6:
+                    self.graph.add_edge(question_id, node, weight=similarity)
+        return question_id
+
+    def add_response(self, text, related_to=None, relevance=1.0):
+        """
+        Agrega una respuesta a la red y la vincula con preguntas o respuestas previas.
+        """
+        response_id = f"R{len(self.graph.nodes) + 1}"
+        resp_embedding = self.get_embedding(text)
+        self.graph.add_node(response_id, text=text, type="response", relevance=relevance, embedding=resp_embedding)
+
+        if related_to:
+            for rel in related_to:
+                if rel in self.graph.nodes:
+                    self.graph.add_edge(rel, response_id, weight=relevance)
+
+        # Conectar automáticamente con preguntas recientes basándose en similitud semántica
+        for node in self.graph.nodes:
+            if self.graph.nodes[node].get('type') == "question":
+                similarity = self.semantic_similarity(self.graph.nodes[node]['text'], text)
+                if similarity > 0.6:
+                    self.graph.add_edge(node, response_id, weight=similarity)
+        return response_id
+
+    def get_embedding(self, text):
+        """
+        Genera un embedding para el texto usando el modelo de SentenceTransformer.
+        """
+        return embedding_model.encode(text)
+
+    def semantic_similarity(self, text_a, text_b):
+        """
+        Calcula la similitud semántica entre dos textos usando la similitud del coseno.
+        """
+        emb_a = self.get_embedding(text_a)
+        emb_b = self.get_embedding(text_b)
+        cosine_sim = np.dot(emb_a, emb_b) / (np.linalg.norm(emb_a) * np.linalg.norm(emb_b))
+        return cosine_sim
+
+    def reinforce_connections(self):
+        """
+        Refuerza las conexiones aumentando la relevancia de respuestas en función del número de conexiones.
+        """
+        for node in self.graph.nodes:
+            if self.graph.nodes[node].get('type') == "response":
+                connections = len(list(self.graph.predecessors(node))) + len(list(self.graph.successors(node)))
+                self.graph.nodes[node]['relevance'] = min(1.0, self.graph.nodes[node]['relevance'] + (connections * 0.05))
+
+    def generate_response_by_levels(self, levels=3):
+        """
+        Genera una respuesta estructurada en niveles, mostrando las respuestas más relevantes.
+        """
+        response_list = []
+        responses = [n for n in self.graph.nodes if self.graph.nodes[n].get('type') == "response"]
+        sorted_responses = sorted(responses, key=lambda n: self.graph.nodes[n]['relevance'], reverse=True)
+        for i, node in enumerate(sorted_responses):
+            if i < levels:
+                response_list.append(self.graph.nodes[node]['text'])
+        return "\n".join(response_list)
+
+    def generate_final_response(self):
+        """
+        Genera la respuesta final combinando todas las respuestas ordenadas por relevancia.
+        """
+        responses = [n for n in self.graph.nodes if self.graph.nodes[n].get('type') == "response"]
+        sorted_responses = sorted(responses, key=lambda n: self.graph.nodes[n]['relevance'], reverse=True)
+        final_response = " ".join([self.graph.nodes[n]['text'] for n in sorted_responses])
+        return final_response
+
+# ---------------- Ejemplo de Uso ----------------
+
+if __name__ == "__main__":  # Corregido __name__
+    ai_model = AIResponseNetwork()
+    
+    # Añadir la primera pregunta y respuestas relacionadas
+    q1 = ai_model.add_question("How will AI affect employment in the future?")
+    ai_model.add_response("AI will replace repetitive tasks.", related_to=[q1], relevance=0.8)
+    ai_model.add_response("AI will create new jobs in technology sectors.", related_to=[q1], relevance=0.9)
+    
+    # Añadir una segunda pregunta y respuestas relacionadas
+    q2 = ai_model.add_question("Is AI more beneficial or harmful for workers?")
+    ai_model.add_response("It depends on the industry's ability to adapt.", related_to=[q2], relevance=0.7)
+    ai_model.add_response("Companies will need to retrain their employees.", related_to=[q2], relevance=0.8)
+    
+    # Reforzar conexiones basadas en la interacción entre nodos
+    ai_model.reinforce_connections()
+    
+    # Generar y mostrar la respuesta final combinada
+    final_resp = ai_model.generate_final_response()
+    print("Final Response:\n", final_resp)
+    
+    # Generar y mostrar la respuesta estructurada por niveles
+    level_resp = ai_model.generate_response_by_levels(levels=3)
+    print("\nResponse by Levels:\n", level_resp)
+
+# Copyright (C) 2025 Johnatan. Todos los derechos reservados.
+# Licenciado bajo Apache 2.0 (ver LICENSE para más detalles).
